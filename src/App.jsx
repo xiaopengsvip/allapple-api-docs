@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import './index.css'
 
 const API_BASE = 'https://v.api.allapple.top'
@@ -336,393 +336,169 @@ const apiEndpoints = [
 ]
 
 function MethodBadge({ method }) {
-  return <span className={`method-badge method-${method.toLowerCase()}`}>{method}</span>
+  return <span className={`method-pill method-${method.toLowerCase()}`}>{method}</span>
 }
 
 function ParamTable({ params }) {
-  if (!params || params.length === 0) return null
+  if (!params?.length) return <div className="muted-mini">无请求参数</div>
+
   return (
-    <table className="param-table">
-      <thead>
-        <tr>
-          <th>参数名</th>
-          <th>类型</th>
-          <th>必填</th>
-          <th>说明</th>
-        </tr>
-      </thead>
-      <tbody>
-        {params.map((p, i) => (
-          <tr key={i}>
-            <td><span className="param-name">{p.name}</span></td>
-            <td><span className="param-type">{p.type}</span></td>
-            <td>{p.required ? <span className="required-badge">必填</span> : <span className="optional-badge">可选</span>}</td>
-            <td>{p.desc}</td>
+    <div className="param-table-wrap">
+      <table className="param-table">
+        <thead>
+          <tr>
+            <th>参数</th>
+            <th>类型</th>
+            <th>必填</th>
+            <th>说明</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {params.map((p, i) => (
+            <tr key={`${p.name}-${i}`}>
+              <td><span className="param-name">{p.name}</span></td>
+              <td><span className="param-type">{p.type}</span></td>
+              <td>{p.required ? <span className="required-badge">必填</span> : <span className="optional-badge">可选</span>}</td>
+              <td>{p.desc}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }
 
 function EndpointCard({ endpoint }) {
   const [expanded, setExpanded] = useState(false)
+  const [activeTab, setActiveTab] = useState(endpoint.requestExample ? 'request' : 'response')
 
   return (
-    <div className="glass-card" style={{ marginBottom: '16px' }}>
-      <div
-        onClick={() => setExpanded(!expanded)}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '12px',
-          padding: '16px 20px',
-          cursor: 'pointer',
-          userSelect: 'none'
-        }}
-      >
+    <article className="endpoint-card" id={endpoint.path.replace(/[^a-zA-Z0-9]/g, '-')}>
+      <button className="endpoint-head" onClick={() => setExpanded(!expanded)}>
         <MethodBadge method={endpoint.method} />
-        <code style={{
-          fontFamily: "'JetBrains Mono', monospace",
-          fontSize: '14px',
-          color: 'var(--text-primary)',
-          flex: 1
-        }}>
-          {endpoint.path}
-        </code>
-        {endpoint.auth && (
-          <span style={{
-            fontSize: '11px',
-            color: 'var(--accent)',
-            background: 'rgba(99, 102, 241, 0.1)',
-            border: '1px solid rgba(99, 102, 241, 0.3)',
-            padding: '2px 8px',
-            borderRadius: '4px'
-          }}>
-            🔑 需要认证
-          </span>
-        )}
-        <span style={{
-          transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)',
-          transition: 'transform 0.3s',
-          color: 'var(--text-secondary)',
-          fontSize: '12px'
-        }}>
-          ▼
-        </span>
-      </div>
+        <code className="endpoint-path">{endpoint.path}</code>
+        <div className="endpoint-tags">
+          {endpoint.auth && <span className="auth-tag">JWT</span>}
+          <span className="endpoint-toggle">{expanded ? '收起' : '展开'}</span>
+        </div>
+      </button>
 
-      <div style={{
-        padding: '0 20px',
-        fontSize: '14px',
-        color: 'var(--text-secondary)',
-        paddingBottom: expanded ? 0 : '16px'
-      }}>
-        {endpoint.description}
-      </div>
+      <div className="endpoint-desc">{endpoint.description}</div>
 
       {expanded && (
-        <div style={{ padding: '0 20px 20px' }}>
-          <div className="glow-line" style={{ margin: '12px 0' }}></div>
-
+        <div className="endpoint-body">
           <ParamTable params={endpoint.params} />
 
-          {endpoint.requestExample && (
-            <div style={{ marginTop: '16px' }}>
-              <div style={{
-                fontSize: '12px',
-                color: 'var(--text-secondary)',
-                marginBottom: '8px',
-                textTransform: 'uppercase',
-                letterSpacing: '1px'
-              }}>
-                请求体
-              </div>
-              <pre className="code-block" style={{ margin: 0 }}>
-                {endpoint.requestExample}
-              </pre>
-            </div>
-          )}
-
-          <div style={{ marginTop: '16px' }}>
-            <div style={{
-              fontSize: '12px',
-              color: 'var(--text-secondary)',
-              marginBottom: '8px',
-              textTransform: 'uppercase',
-              letterSpacing: '1px'
-            }}>
+          <div className="tab-row">
+            {endpoint.requestExample && (
+              <button className={`tab-btn ${activeTab === 'request' ? 'active' : ''}`} onClick={() => setActiveTab('request')}>
+                请求示例
+              </button>
+            )}
+            <button className={`tab-btn ${activeTab === 'response' ? 'active' : ''}`} onClick={() => setActiveTab('response')}>
               响应示例
-            </div>
-            <pre className="code-block" style={{ margin: 0 }}>
-              {endpoint.responseExample}
-            </pre>
+            </button>
           </div>
+
+          <pre className="code-block">
+            {activeTab === 'request' && endpoint.requestExample ? endpoint.requestExample : endpoint.responseExample}
+          </pre>
         </div>
       )}
-    </div>
+    </article>
   )
 }
 
 function App() {
-  const [activeNav, setActiveNav] = useState('overview')
-  const totalEndpoints = apiEndpoints.reduce((acc, cat) => acc + cat.endpoints.length, 0)
-  const authEndpoints = apiEndpoints.reduce((acc, cat) => acc + cat.endpoints.filter(e => e.auth).length, 0)
+  const [activeCategory, setActiveCategory] = useState('全部')
+  const [query, setQuery] = useState('')
+
+  const categoryList = ['全部', ...apiEndpoints.map((c) => c.category)]
+
+  const flatEndpoints = useMemo(() => {
+    const rows = []
+    for (const cat of apiEndpoints) {
+      for (const ep of cat.endpoints) {
+        rows.push({ ...ep, category: cat.category, icon: cat.icon })
+      }
+    }
+    return rows
+  }, [])
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return flatEndpoints.filter((ep) => {
+      const hitCategory = activeCategory === '全部' || ep.category === activeCategory
+      if (!hitCategory) return false
+      if (!q) return true
+      return (
+        ep.path.toLowerCase().includes(q) ||
+        ep.description.toLowerCase().includes(q) ||
+        ep.method.toLowerCase().includes(q) ||
+        ep.category.toLowerCase().includes(q)
+      )
+    })
+  }, [flatEndpoints, activeCategory, query])
+
+  const totalEndpoints = flatEndpoints.length
+  const authEndpoints = flatEndpoints.filter((ep) => ep.auth).length
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex' }}>
-      {/* Sidebar */}
-      <nav style={{
-        width: '260px',
-        background: 'var(--bg-secondary)',
-        borderRight: '1px solid var(--border)',
-        padding: '24px 0',
-        position: 'fixed',
-        height: '100vh',
-        overflowY: 'auto'
-      }}>
-        <div style={{ padding: '0 20px', marginBottom: '32px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{
-              width: '36px',
-              height: '36px',
-              borderRadius: '10px',
-              background: 'linear-gradient(135deg, var(--accent), #a855f7)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '18px'
-            }}>
-              🍎
-            </div>
-            <div>
-              <div style={{ fontWeight: 700, fontSize: '16px' }}>AllApple API</div>
-              <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>v1.0.0</div>
-            </div>
+    <div className="docs-shell">
+      <div className="noise" />
+
+      <aside className="sidebar">
+        <div className="brand-box">
+          <div className="brand-logo">🍎</div>
+          <div>
+            <div className="brand-title">AllApple API Docs</div>
+            <div className="brand-sub">v2.0 • Neon Developer Experience</div>
           </div>
         </div>
 
-        <div style={{ padding: '0 12px' }}>
-          <div
-            onClick={() => setActiveNav('overview')}
-            style={{
-              padding: '8px 12px',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              marginBottom: '4px',
-              background: activeNav === 'overview' ? 'rgba(99, 102, 241, 0.15)' : 'transparent',
-              color: activeNav === 'overview' ? 'var(--accent)' : 'var(--text-secondary)',
-              fontSize: '14px',
-              fontWeight: 500,
-              transition: 'all 0.2s'
-            }}
-          >
-            📋 概览
-          </div>
+        <div className="quick-stats">
+          <div><span>Base URL</span><code>{API_BASE}</code></div>
+          <div><span>接口总数</span><strong>{totalEndpoints}</strong></div>
+          <div><span>需认证</span><strong>{authEndpoints}</strong></div>
+        </div>
 
-          {apiEndpoints.map((cat, i) => (
-            <div key={i}>
-              <div style={{
-                padding: '12px 12px 6px',
-                fontSize: '11px',
-                color: 'var(--text-secondary)',
-                textTransform: 'uppercase',
-                letterSpacing: '1.5px',
-                fontWeight: 600
-              }}>
-                {cat.icon} {cat.category}
-              </div>
-              {cat.endpoints.map((ep, j) => (
-                <div
-                  key={j}
-                  onClick={() => setActiveNav(`${i}-${j}`)}
-                  style={{
-                    padding: '6px 12px',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    marginBottom: '2px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    background: activeNav === `${i}-${j}` ? 'rgba(99, 102, 241, 0.1)' : 'transparent',
-                    transition: 'all 0.2s'
-                  }}
-                >
-                  <span className={`method-badge method-${ep.method.toLowerCase()}`} style={{
-                    fontSize: '9px',
-                    padding: '1px 6px',
-                    minWidth: '40px'
-                  }}>
-                    {ep.method}
-                  </span>
-                  <span style={{
-                    fontSize: '12px',
-                    color: activeNav === `${i}-${j}` ? 'var(--text-primary)' : 'var(--text-secondary)',
-                    fontFamily: "'JetBrains Mono', monospace",
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap'
-                  }}>
-                    {ep.path.replace('/api/', '')}
-                  </span>
-                </div>
-              ))}
-            </div>
+        <nav className="nav-list">
+          {categoryList.map((cat) => (
+            <button
+              key={cat}
+              className={`nav-item ${activeCategory === cat ? 'active' : ''}`}
+              onClick={() => setActiveCategory(cat)}
+            >
+              {cat}
+            </button>
           ))}
-        </div>
+        </nav>
+      </aside>
 
-        <div style={{
-          position: 'absolute',
-          bottom: '20px',
-          left: '20px',
-          right: '20px'
-        }}>
-          <div className="glow-line"></div>
-          <div style={{ fontSize: '11px', color: 'var(--text-secondary)', textAlign: 'center' }}>
-            AllApple Backend API<br />
-            <span style={{ color: 'var(--accent)' }}>43.167.213.143:8641</span>
+      <main className="content">
+        <section className="hero-panel">
+          <div>
+            <p className="eyebrow">Production-Ready API Platform</p>
+            <h1>为 docs.allapple.top 全面升级主流炫酷 UI/UX</h1>
+            <p className="hero-desc">
+              采用暗色玻璃 + 霓虹渐变 + 结构化信息架构。支持快速筛选、分类浏览、接口展开查看、请求/响应示例切换。
+            </p>
           </div>
-        </div>
-      </nav>
 
-      {/* Main Content */}
-      <main style={{ marginLeft: '260px', flex: 1, padding: '40px 48px' }}>
-        {activeNav === 'overview' ? (
-          <>
-            {/* Hero */}
-            <div style={{ marginBottom: '48px' }}>
-              <h1 style={{
-                fontSize: '42px',
-                fontWeight: 800,
-                background: 'linear-gradient(135deg, #6366f1, #a855f7, #ec4899)',
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
-                marginBottom: '12px'
-              }}>
-                AllApple Backend API
-              </h1>
-              <p style={{ fontSize: '16px', color: 'var(--text-secondary)', maxWidth: '600px' }}>
-                统一管理 GitHub、Vercel、Cloudflare 的后端 API 服务。
-                提供项目管理、域名管理、站点监控等一站式接口。
-              </p>
-            </div>
+          <div className="search-box">
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="搜索 path / method / 描述 / 分类..."
+            />
+          </div>
+        </section>
 
-            {/* Stats */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '48px' }}>
-              {[
-                { label: '接口总数', value: totalEndpoints, icon: '🔗' },
-                { label: '需认证', value: authEndpoints, icon: '🔑' },
-                { label: '分类', value: apiEndpoints.length, icon: '📂' },
-                { label: '版本', value: '1.0.0', icon: '🏷️' }
-              ].map((stat, i) => (
-                <div key={i} className="glass-card" style={{ padding: '20px', textAlign: 'center' }}>
-                  <div style={{ fontSize: '24px', marginBottom: '8px' }}>{stat.icon}</div>
-                  <div style={{ fontSize: '28px', fontWeight: 700, color: 'var(--accent)' }}>{stat.value}</div>
-                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px' }}>{stat.label}</div>
-                </div>
-              ))}
-            </div>
-
-            {/* Quick Start */}
-            <div className="glass-card" style={{ padding: '24px', marginBottom: '32px' }}>
-              <h2 style={{ fontSize: '18px', fontWeight: 700, marginBottom: '16px' }}>🚀 快速开始</h2>
-
-              <div style={{ marginBottom: '16px' }}>
-                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                  1. 登录获取 Token
-                </div>
-                <pre className="code-block">{`curl -X POST ${API_BASE}/api/auth/login \\
-  -H "Content-Type: application/json" \\
-  -d '{"password": "your_password"}'`}</pre>
-              </div>
-
-              <div style={{ marginBottom: '16px' }}>
-                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                  2. 使用 Token 调用接口
-                </div>
-                <pre className="code-block">{`curl ${API_BASE}/api/dashboard \\
-  -H "Authorization: Bearer <your_token>"`}</pre>
-              </div>
-
-              <div>
-                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                  Base URL
-                </div>
-                <pre className="code-block" style={{ color: 'var(--accent)' }}>{API_BASE}</pre>
-              </div>
-            </div>
-
-            {/* Auth Info */}
-            <div className="glass-card" style={{ padding: '24px', marginBottom: '32px' }}>
-              <h2 style={{ fontSize: '18px', fontWeight: 700, marginBottom: '16px' }}>🔐 认证方式</h2>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '14px', marginBottom: '12px' }}>
-                除登录接口外，所有接口均需要在请求头中携带 JWT Token：
-              </p>
-              <pre className="code-block">{`Authorization: Bearer <your_jwt_token>`}</pre>
-              <div style={{ marginTop: '12px', fontSize: '13px', color: 'var(--text-secondary)' }}>
-                <div>• Token 有效期：<span style={{ color: 'var(--accent)' }}>7 天</span></div>
-                <div>• 签名算法：<span style={{ color: 'var(--accent)' }}>HS256</span></div>
-                <div>• 过期后需重新登录获取新 Token</div>
-              </div>
-            </div>
-
-            {/* Endpoint List */}
-            <h2 style={{ fontSize: '22px', fontWeight: 700, marginBottom: '20px' }}>📋 所有接口</h2>
-            {apiEndpoints.map((cat, i) => (
-              <div key={i} style={{ marginBottom: '32px' }}>
-                <h3 style={{
-                  fontSize: '16px',
-                  fontWeight: 600,
-                  color: 'var(--text-secondary)',
-                  marginBottom: '12px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px'
-                }}>
-                  <span>{cat.icon}</span> {cat.category}
-                  <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                    ({cat.endpoints.length} 个接口)
-                  </span>
-                </h3>
-                {cat.endpoints.map((ep, j) => (
-                  <EndpointCard key={j} endpoint={ep} />
-                ))}
-              </div>
-            ))}
-          </>
-        ) : (
-          /* Single endpoint view */
-          (() => {
-            const [catIdx, epIdx] = activeNav.split('-').map(Number)
-            const cat = apiEndpoints[catIdx]
-            const ep = cat?.endpoints[epIdx]
-            if (!ep) return null
-            return (
-              <>
-                <div style={{ marginBottom: '24px' }}>
-                  <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
-                    {cat.icon} {cat.category}
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <MethodBadge method={ep.method} />
-                    <code style={{ fontSize: '20px', fontFamily: "'JetBrains Mono', monospace" }}>
-                      {ep.path}
-                    </code>
-                  </div>
-                  <p style={{ marginTop: '8px', color: 'var(--text-secondary)' }}>{ep.description}</p>
-                </div>
-                <EndpointCard endpoint={ep} />
-              </>
-            )
-          })()
-        )}
-
-        {/* Footer */}
-        <div className="glow-line" style={{ marginTop: '60px' }}></div>
-        <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-secondary)', fontSize: '12px' }}>
-          AllApple Backend API © 2026 — AI System Architect<br />
-          Powered by Express.js + JWT + PM2
-        </div>
+        <section className="endpoint-grid">
+          {filtered.map((ep) => (
+            <EndpointCard key={`${ep.method}-${ep.path}`} endpoint={ep} />
+          ))}
+        </section>
       </main>
     </div>
   )
