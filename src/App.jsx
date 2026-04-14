@@ -409,9 +409,208 @@ function EndpointCard({ endpoint }) {
   )
 }
 
+function exportOpenApi(flatEndpoints) {
+  const paths = {}
+  for (const ep of flatEndpoints) {
+    if (!paths[ep.path]) paths[ep.path] = {}
+    paths[ep.path][ep.method.toLowerCase()] = {
+      summary: ep.description,
+      tags: [ep.category],
+      security: ep.auth ? [{ bearerAuth: [] }] : [],
+      requestBody: ep.requestExample
+        ? {
+            required: true,
+            content: {
+              'application/json': {
+                example: (() => {
+                  try {
+                    return JSON.parse(ep.requestExample)
+                  } catch {
+                    return ep.requestExample
+                  }
+                })()
+              }
+            }
+          }
+        : undefined,
+      responses: {
+        200: {
+          description: 'Success',
+          content: {
+            'application/json': {
+              example: (() => {
+                try {
+                  return JSON.parse(ep.responseExample)
+                } catch {
+                  return ep.responseExample
+                }
+              })()
+            }
+          }
+        }
+      }
+    }
+  }
+
+  const doc = {
+    openapi: '3.0.3',
+    info: {
+      title: 'AllApple API',
+      version: '2.1.0',
+      description: 'Generated from docs.allapple.top UI'
+    },
+    servers: [{ url: API_BASE }],
+    components: {
+      securitySchemes: {
+        bearerAuth: {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT'
+        }
+      }
+    },
+    paths
+  }
+
+  const blob = new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = 'allapple-openapi-2.1.0.json'
+  a.click()
+  URL.revokeObjectURL(a.href)
+}
+
+function ApiTester({ flatEndpoints }) {
+  const [selectedKey, setSelectedKey] = useState(flatEndpoints[0] ? `${flatEndpoints[0].method} ${flatEndpoints[0].path}` : '')
+  const [path, setPath] = useState(flatEndpoints[0]?.path || '/api/health')
+  const [method, setMethod] = useState(flatEndpoints[0]?.method || 'GET')
+  const [token, setToken] = useState('')
+  const [body, setBody] = useState(flatEndpoints[0]?.requestExample || '{\n  "password": "***"\n}')
+  const [loading, setLoading] = useState(false)
+  const [result, setResult] = useState('')
+
+  const endpointMap = useMemo(() => {
+    const map = new Map()
+    flatEndpoints.forEach((ep) => map.set(`${ep.method} ${ep.path}`, ep))
+    return map
+  }, [flatEndpoints])
+
+  const onSelect = (value) => {
+    setSelectedKey(value)
+    const ep = endpointMap.get(value)
+    if (!ep) return
+    setPath(ep.path)
+    setMethod(ep.method)
+    if (ep.requestExample) setBody(ep.requestExample)
+  }
+
+  const copyText = async (text) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      alert('已复制到剪贴板')
+    } catch {
+      alert('复制失败，请手动复制')
+    }
+  }
+
+  const curlSnippet = `curl -X ${method} '${API_BASE}${path}' \
+  -H 'Content-Type: application/json'${token ? " \
+  -H 'Authorization: Bearer <TOKEN>'" : ''}${method !== 'GET' ? " \
+  -d '" + body.replace(/'/g, "\\'") + "'" : ''}`
+
+  const fetchSnippet = `fetch('${API_BASE}${path}', {
+  method: '${method}',
+  headers: {
+    'Content-Type': 'application/json'${token ? ",\n    Authorization: 'Bearer <TOKEN>'" : ''}
+  }${method !== 'GET' ? ",\n  body: JSON.stringify(" + body + ")" : ''}
+}).then(r => r.json())`
+
+  const axiosSnippet = `axios({
+  method: '${method.toLowerCase()}',
+  url: '${API_BASE}${path}',
+  headers: {${token ? "\n    Authorization: 'Bearer <TOKEN>'," : ''}
+    'Content-Type': 'application/json'
+  }${method !== 'GET' ? ",\n  data: " + body : ''}
+})`
+
+  const sendRequest = async () => {
+    setLoading(true)
+    setResult('')
+    try {
+      const headers = { 'Content-Type': 'application/json' }
+      if (token.trim()) headers.Authorization = `Bearer ${token.trim()}`
+
+      const options = { method, headers }
+      if (method !== 'GET') {
+        try {
+          JSON.parse(body)
+        } catch {
+          throw new Error('Body 不是有效 JSON')
+        }
+        options.body = body
+      }
+
+      const res = await fetch(`${API_BASE}${path}`, options)
+      const text = await res.text()
+      let parsed
+      try {
+        parsed = JSON.stringify(JSON.parse(text), null, 2)
+      } catch {
+        parsed = text
+      }
+      setResult(`HTTP ${res.status}\n\n${parsed}`)
+    } catch (err) {
+      setResult(`请求失败: ${err.message}`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <section className="tester-panel">
+      <div className="tester-head">
+        <h2>在线调试台</h2>
+        <span>实时测试 API / 复制代码片段 / 快速联调</span>
+      </div>
+
+      <div className="tester-controls">
+        <select value={selectedKey} onChange={(e) => onSelect(e.target.value)}>
+          {flatEndpoints.map((ep) => (
+            <option key={`${ep.method}-${ep.path}`} value={`${ep.method} ${ep.path}`}>
+              {ep.method} {ep.path}
+            </option>
+          ))}
+        </select>
+
+        <div className="row-2">
+          <select value={method} onChange={(e) => setMethod(e.target.value)}>
+            {['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((m) => (
+              <option key={m} value={m}>{m}</option>
+            ))}
+          </select>
+          <input value={path} onChange={(e) => setPath(e.target.value)} placeholder="/api/health" />
+        </div>
+
+        <input value={token} onChange={(e) => setToken(e.target.value)} placeholder="Bearer Token（可选）" />
+        <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={7} />
+
+        <div className="tester-btns">
+          <button onClick={sendRequest} disabled={loading}>{loading ? '请求中...' : '发送请求'}</button>
+          <button onClick={() => copyText(curlSnippet)}>复制 cURL</button>
+          <button onClick={() => copyText(fetchSnippet)}>复制 fetch</button>
+          <button onClick={() => copyText(axiosSnippet)}>复制 axios</button>
+        </div>
+      </div>
+
+      <pre className="code-block result-block">{result || '响应结果将显示在这里...'}</pre>
+    </section>
+  )
+}
+
 function App() {
   const [activeCategory, setActiveCategory] = useState('全部')
   const [query, setQuery] = useState('')
+  const [theme, setTheme] = useState('neon')
 
   const categoryList = ['全部', ...apiEndpoints.map((c) => c.category)]
 
@@ -444,7 +643,7 @@ function App() {
   const authEndpoints = flatEndpoints.filter((ep) => ep.auth).length
 
   return (
-    <div className="docs-shell">
+    <div className={`docs-shell theme-${theme}`}>
       <div className="noise" />
 
       <aside className="sidebar">
@@ -452,7 +651,7 @@ function App() {
           <div className="brand-logo">🍎</div>
           <div>
             <div className="brand-title">AllApple API Docs</div>
-            <div className="brand-sub">v2.0 • Neon Developer Experience</div>
+            <div className="brand-sub">v2.1 • Neon Developer Experience</div>
           </div>
         </div>
 
@@ -461,6 +660,14 @@ function App() {
           <div><span>接口总数</span><strong>{totalEndpoints}</strong></div>
           <div><span>需认证</span><strong>{authEndpoints}</strong></div>
         </div>
+
+        <div className="theme-row">
+          <button className={theme === 'neon' ? 'active' : ''} onClick={() => setTheme('neon')}>霓虹</button>
+          <button className={theme === 'midnight' ? 'active' : ''} onClick={() => setTheme('midnight')}>极夜</button>
+          <button className={theme === 'aurora' ? 'active' : ''} onClick={() => setTheme('aurora')}>极光</button>
+        </div>
+
+        <button className="openapi-btn" onClick={() => exportOpenApi(flatEndpoints)}>导出 OpenAPI JSON</button>
 
         <nav className="nav-list">
           {categoryList.map((cat) => (
@@ -479,9 +686,9 @@ function App() {
         <section className="hero-panel">
           <div>
             <p className="eyebrow">Production-Ready API Platform</p>
-            <h1>为 docs.allapple.top 全面升级主流炫酷 UI/UX</h1>
+            <h1>docs.allapple.top v2.1 增强版</h1>
             <p className="hero-desc">
-              采用暗色玻璃 + 霓虹渐变 + 结构化信息架构。支持快速筛选、分类浏览、接口展开查看、请求/响应示例切换。
+              新增：在线调试台、cURL/fetch/axios 一键复制、OpenAPI JSON 导出、三主题切换（霓虹/极夜/极光）。
             </p>
           </div>
 
@@ -493,6 +700,8 @@ function App() {
             />
           </div>
         </section>
+
+        <ApiTester flatEndpoints={flatEndpoints} />
 
         <section className="endpoint-grid">
           {filtered.map((ep) => (
